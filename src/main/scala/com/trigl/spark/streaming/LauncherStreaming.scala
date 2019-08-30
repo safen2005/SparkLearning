@@ -14,39 +14,28 @@ import org.apache.spark.streaming.{Seconds, StreamingContext, Time}
 import scala.collection.mutable.ArrayBuffer
 
 /**
-  * 桌面日志实时ETL
-  *
-  * @author 白鑫
+  *Flume+Kafka+SparkStreaming进行实时日志分析
+  * @author 邵洋
   */
 object LauncherStreaming {
-
   val HDFS_DIR = "/changmi/launcher/click"
-
   def main(args: Array[String]) {
-
     Logger.getLogger("org.apache.spark").setLevel(Level.WARN)
     System.setProperty("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
     val sparkConf = new SparkConf().setAppName("LauncherStreaming")
-
-    //每60秒一个批次
-    val ssc = new StreamingContext(sparkConf, Seconds(60))
-
+    val ssc = new StreamingContext(sparkConf, Seconds(60))//每60秒一个批次
     // 从Kafka中读取数据
-    // 日志内容：val str = "183.160.102.250|1493169060.849|UEsDBBQACAgIAGBJmkoAAAAAAAAAAAAAAAABAAAAMGVVS3LrNhC8DVYvKmB+GJRXWaVygBwABCGLZYm0fi9xKofPUCJgO9mQNUVwPt09DRX2Ih41MgaSX*RrzOhOdfr77k48L7f6T1lOuzyPl2Uad+OUj*XiQmGikJMLlDD4BCmi5x+PKHhNrD5uEXBARukRBFbtkXof2n8QiUT9M7JWoockL2Xevd3*XHbvx*xhlccwesxArTKJtyQvX3vMx3w5leNS3hxmGQpQ7qcTA7XqyJE8bn1SDB6D6rdM13q7TfPr1VVKA8HYq6oPUfFHi5CVqU1vqZQ6FoAepUcIPqHvkWH4+R+yV+nfYhKvHUMktcZbpOwZ2klMiNh6CQQBCLbIsAHwlFqUBH0IjwkfBNvT+NyVfKqX7JBK2jOOfcaoIr074yJ56d0J8yffKYj10PsxglferMqtzqXOt935*D6drrXcL9XJyPshaackeU+4lbFmPcSwReTFMKG0SqDelns57Gox+c1jvjjjKw5YtacBNCS+sXc6XR0D7IsE7scic4RPMTJp+h8gr*loIv9wgylHsETXpkabu3GCEST0qSOKiQta496EjH0MiDYl*AeR4*SzOpQoPkjpFdj7FPseIUnc2Ftpj5T0a7PX22KAcg1xTywtR5KQoOdIUYOGliMYnKF9i2RvbtsQWUNITSsRwcTz1Eo55Pn1NO2O+T6Xg+1gkkHDkDZQ1yKJuPMvgWyxeoQm5KYbQkAb8RsSp5NjH3AkwpbvIQLfSUJk7v6hNoI2TJhAtOl7dQy1pW6oc1BO9L3WMkzHej67PZZxT2VsFZOBhk8h1NcuoF+P03v++O39sMzV5QJG1n7TbYBAZFi2tkjXPWxQQoIgW8tApjim7aRZobe2nuvRxLz743dnq2eoU3DNm4z8NrUtMZpWt*SmA8sO7ZsqRfOOR8Jrnt*ueVr1cbvn2RUdTVx1aEmVo4H2OHqePqbdz2msi8tjzTDsG*xiyU14rXurxLgJ2zxAUKXNkkjNUbrMo7fGnoAPeRrvZp*5Ug7D8pfjsVb1st0Xpry42n2DK9qkzcFQdRVQL8Fs5hb6Xq2oPDepLMvx8ThPLuwjQFXY0pulmAX7NoHRpNvinKfDsqD4TQnXvK9u3JsADBm3WZAttVVt6MoqwPhdRbebk1QFInjXSAAReSJ7y8uQl+3lcmXcC26ywbi+oE0XHwhSjyJ0c7IopdDARbWV4MQ9IqsNHTFApa82tl7b7*l9XVVz9aB5Q8aUEhPL0yYPH7v1jryWS62z0xKglBLaQbstgsLLv1BLBwjA8lu4twMAACkIAAA="
     val kafkaStream = KafkaUtils.createStream(
       ssc,
       "hxf:2181,cfg:2181,jqs:2181,jxf:2181,sxtb:2181", // Kafka集群使用的zookeeper
       "launcher-streaming", // 该消费者使用的group.id
       Map[String, Int]("launcher_click" -> 0, "launcher_click" -> 1), // 日志在Kafka中的topic及其分区
       StorageLevel.MEMORY_AND_DISK_SER).map(_._2) // 获取日志内容
-
     kafkaStream.foreachRDD((rdd: RDD[String], time: Time) => {
       val result = rdd.map(log => parseLog(log)) // 分析处理原始日志
         .filter(t => StringUtils.isNotBlank(t._1) && StringUtils.isNotBlank(t._2))
-      // 存入hdfs
       result.saveAsHadoopFile(HDFS_DIR, classOf[String], classOf[String], classOf[LauncherMultipleTextOutputFormat[String, String]])
     })
-
     ssc.start()
     // 等待实时流
     ssc.awaitTermination()
